@@ -83,47 +83,59 @@ function saveSharedPlayerClaims(string $code, array $claims): void
     file_put_contents(getSharedPlayerFile($code), json_encode($claims, JSON_PRETTY_PRINT), LOCK_EX);
 }
 
-function claimSharedPlayer(string $code, SchwimmenGame $game): int
+function generateShareToken(): string
 {
-    $sessionId = session_id();
+    return bin2hex(random_bytes(8));
+}
+
+function claimNextSharedSlot(string $code, SchwimmenGame $game): array
+{
     $humanPlayers = countHumanPlayers($game);
     $claims = loadSharedPlayerClaims($code);
 
-    foreach ($claims as $number => $claimSessionId) {
-        if ($claimSessionId === $sessionId) {
-            return (int) $number;
-        }
-    }
-
     for ($number = 1; $number <= $humanPlayers; $number++) {
         if (empty($claims[(string) $number])) {
-            $claims[(string) $number] = $sessionId;
+            $token = generateShareToken();
+            $claims[(string) $number] = $token;
             saveSharedPlayerClaims($code, $claims);
-            return $number;
+            return [$number, $token];
         }
     }
 
-    return 0;
+    return [0, ''];
 }
 
-function releaseSharedPlayer(string $code): void
+function verifySharedSlot(string $code, int $playerNumber, string $token): bool
 {
-    $sessionId = session_id();
-    $claims = loadSharedPlayerClaims($code);
-    foreach ($claims as $number => $claimSessionId) {
-        if ($claimSessionId === $sessionId) {
-            unset($claims[$number]);
-        }
+    if ($playerNumber < 1 || $token === '') {
+        return false;
     }
 
+    $claims = loadSharedPlayerClaims($code);
+    return isset($claims[(string) $playerNumber]) && hash_equals((string) $claims[(string) $playerNumber], $token);
+}
+
+function releaseSharedSlot(string $code, int $playerNumber): void
+{
+    $claims = loadSharedPlayerClaims($code);
+    unset($claims[(string) $playerNumber]);
     saveSharedPlayerClaims($code, $claims);
 }
 
-function redirectToGame(?string $gameCode = null): void
+function redirectToGame(?string $gameCode = null, ?int $playerNumber = null, ?string $token = null): void
 {
     $target = $_SERVER['PHP_SELF'];
+    $params = [];
     if ($gameCode) {
-        $target .= '?spiel=' . urlencode($gameCode);
+        $params['spiel'] = $gameCode;
+        if ($playerNumber) {
+            $params['spieler'] = $playerNumber;
+            $params['token'] = $token;
+        }
+    }
+
+    if ($params) {
+        $target .= '?' . http_build_query($params);
     }
 
     header('Location: ' . $target);
@@ -132,14 +144,12 @@ function redirectToGame(?string $gameCode = null): void
 
 $gameCode = normalizeGameCode($_GET['spiel'] ?? '');
 $isMultiplayer = $gameCode !== '';
-$playerNumber = 1;
+$playerNumber = $isMultiplayer ? 0 : 1;
+$playerToken = (string) ($_GET['token'] ?? $_POST['token'] ?? '');
+$requestedPlayerNumber = (int) ($_GET['spieler'] ?? $_POST['spieler'] ?? 0);
 $shareUrl = '';
 $showRules = false;
 $joinError = '';
-
-if (!isset($_SESSION['players_by_game']) || !is_array($_SESSION['players_by_game'])) {
-    $_SESSION['players_by_game'] = [];
-}
 
 if ($isMultiplayer) {
     $game = loadSharedGame($gameCode);
@@ -148,12 +158,17 @@ if ($isMultiplayer) {
         $joinError = 'Dieses Spiel wurde nicht gefunden.';
         $isMultiplayer = false;
         $gameCode = '';
+        $playerNumber = 1;
     } else {
-        if (!isset($_SESSION['players_by_game'][$gameCode])) {
-            $_SESSION['players_by_game'][$gameCode] = claimSharedPlayer($gameCode, $game);
+        if ($requestedPlayerNumber > 0 && verifySharedSlot($gameCode, $requestedPlayerNumber, $playerToken)) {
+            $playerNumber = $requestedPlayerNumber;
+        } elseif ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            [$claimedNumber, $claimedToken] = claimNextSharedSlot($gameCode, $game);
+            if ($claimedNumber > 0) {
+                redirectToGame($gameCode, $claimedNumber, $claimedToken);
+            }
         }
 
-        $playerNumber = (int) $_SESSION['players_by_game'][$gameCode];
         $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
         $shareUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['PHP_SELF'] . '?spiel=' . urlencode($gameCode);
     }
@@ -179,26 +194,31 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         $gameCode = createGameCode();
         $game = new SchwimmenGame();
         $game->start($humanPlayers);
-        $_SESSION['players_by_game'][$gameCode] = 1;
-        saveSharedPlayerClaims($gameCode, ['1' => session_id()]);
         saveSharedGame($gameCode, $game);
-        redirectToGame($gameCode);
+        [$claimedNumber, $claimedToken] = claimNextSharedSlot($gameCode, $game);
+        redirectToGame($gameCode, $claimedNumber, $claimedToken);
     }
 
     if (isset($_POST['join_multiplayer'])) {
         $postedCode = normalizeGameCode($_POST['game_code'] ?? '');
         $postedGame = $postedCode ? loadSharedGame($postedCode) : null;
         if ($postedGame instanceof SchwimmenGame) {
-            $_SESSION['players_by_game'][$postedCode] = claimSharedPlayer($postedCode, $postedGame);
-            redirectToGame($postedCode);
+            [$claimedNumber, $claimedToken] = claimNextSharedSlot($postedCode, $postedGame);
+            if ($claimedNumber > 0) {
+                redirectToGame($postedCode, $claimedNumber, $claimedToken);
+            }
+            $joinError = 'Dieses Spiel ist bereits voll.';
+        } else {
+            $joinError = 'Spielcode nicht gefunden.';
         }
 
-        $joinError = 'Spielcode nicht gefunden.';
         $game = new SchwimmenGame();
     } elseif (isset($_POST['title_screen'])) {
+        if ($isMultiplayer && $playerNumber > 0) {
+            releaseSharedSlot($gameCode, $playerNumber);
+        }
+
         if ($isMultiplayer) {
-            releaseSharedPlayer($gameCode);
-            unset($_SESSION['players_by_game'][$gameCode]);
             redirectToGame();
         }
 
@@ -240,7 +260,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     }
 
     if (!$showRules && !$joinError) {
-        redirectToGame($isMultiplayer ? $gameCode : null);
+        redirectToGame(
+            $isMultiplayer ? $gameCode : null,
+            ($isMultiplayer && $playerNumber > 0) ? $playerNumber : null,
+            ($isMultiplayer && $playerNumber > 0) ? $playerToken : null
+        );
     }
 }
 
