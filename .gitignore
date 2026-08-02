@@ -1,0 +1,6 @@
+# Runtime game data (generated per session, should not be versioned)
+/spiele/
+
+# Local server helper scripts
+start-server.bat
+start-server-hidden.vbs
