@@ -490,6 +490,30 @@ input[type="text"]::placeholder {
     justify-content: flex-start;
 }
 
+.player-count-picker {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.player-count-picker label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.player-count-picker select {
+    font-size: 16px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(10, 12, 10, 0.62);
+    color: inherit;
+}
+
 .title-box button {
     font-size: 18px;
     padding: 12px 20px;

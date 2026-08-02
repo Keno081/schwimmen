@@ -1,4 +1,4 @@
-import { cardHtml, handHtml, getBestScore, scoreHand, scoreText, isWinner, canRenewMiddleSevenEightNine } from './game.js';
+import { cardHtml, handHtml, getBestScore, scoreHand, scoreText, isWinner, canRenewMiddleSevenEightNine, MAX_PLAYERS } from './game.js';
 
 function esc(value) {
     return String(value ?? '')
@@ -12,16 +12,32 @@ function findPlayer(game, number) {
     return game.players.find((p) => p.number === number) || null;
 }
 
+function playerCountOptions(min, max, selected) {
+    let html = '';
+    for (let n = min; n <= max; n++) {
+        html += `<option value="${n}" ${n === selected ? 'selected' : ''}>${n}</option>`;
+    }
+    return html;
+}
+
 function renderTitleScreen({ joinError, showRules }) {
     return `
         <section class="title-screen">
             <div class="title-box">
                 <div class="title-copy">
-                    <div class="title-kicker">31 Punkte &middot; Echtzeit &middot; 2 Geraete</div>
+                    <div class="title-kicker">31 Punkte &middot; Echtzeit &middot; bis zu ${MAX_PLAYERS} Spieler</div>
                     <h1>Schwimmen</h1>
-                    <p>Starte alleine gegen Computer oder eine private Runde mit Spielcode.</p>
+                    <p>Starte alleine gegen Computer oder eine private Mehrspieler-Runde mit Spielcode.</p>
                     <form method="post" class="title-actions">
-                        <button type="submit" name="create_multiplayer" value="1">2-Ger&auml;te-Spiel erstellen</button>
+                        <div class="player-count-picker">
+                            <label>Mitspieler
+                                <select name="human_players">${playerCountOptions(2, MAX_PLAYERS, 2)}</select>
+                            </label>
+                            <label>Computer
+                                <select name="bot_count">${playerCountOptions(0, MAX_PLAYERS - 2, 2)}</select>
+                            </label>
+                        </div>
+                        <button type="submit" name="create_multiplayer" value="1">Mehrspieler-Spiel erstellen</button>
                         <button type="submit" class="secondary" name="start_game" value="1">Allein spielen</button>
                         <button type="submit" class="secondary" name="show_rules" value="1">Regeln</button>
                     </form>
@@ -68,7 +84,7 @@ function renderGameScreen(ctx) {
 
     const multiplayerPanel = isMultiplayer ? `
         <section class="panel multiplayer-panel">
-            <h2>2-Geraete-Spiel</h2>
+            <h2>Mehrspieler-Spiel</h2>
             <div class="table-info">
                 <span class="badge">Code: ${esc(gameCode)}</span>
                 <span class="badge">Du: ${esc(currentHumanPlayer ? currentHumanPlayer.name : 'Zuschauer')}</span>
@@ -164,7 +180,7 @@ function renderGameScreen(ctx) {
     <div class="top">
         <div>
             <h1>Schwimmen</h1>
-            <div>4 Spieler, 3 Karten, Ziel: 31 Punkte.</div>
+            <div>${game.players.length} Spieler, 3 Karten, Ziel: 31 Punkte.</div>
             ${isMultiplayer ? `<div>Spielcode: <strong>${esc(gameCode)}</strong> &middot; Du bist ${esc(currentHumanPlayer ? currentHumanPlayer.name : 'Zuschauer')}</div>` : ''}
         </div>
         <form method="post">

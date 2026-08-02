@@ -1,5 +1,5 @@
 import { renderPage } from './render.js';
-import { createGame, startGame, swapOne, swapAll, pass, knock, renewMiddleSevenEightNine, computerTurn } from './game.js';
+import { createGame, startGame, swapOne, swapAll, pass, knock, renewMiddleSevenEightNine, computerTurn, MAX_PLAYERS } from './game.js';
 import { GameRoom } from './gameRoom.js';
 
 export { GameRoom };
@@ -175,10 +175,12 @@ async function handleRequest(request, env, url) {
         }
     } else {
         if (formData.has('create_multiplayer')) {
-            const humanPlayers = Math.max(2, Math.min(4, parseInt(formData.get('human_players') || '2', 10)));
+            const humanPlayers = Math.max(2, Math.min(MAX_PLAYERS, parseInt(formData.get('human_players') || '2', 10)));
+            const botCount = Math.max(0, Math.min(MAX_PLAYERS - humanPlayers, parseInt(formData.get('bot_count') || '0', 10)));
+            const totalPlayers = humanPlayers + botCount;
             const code = await createGameCode(kv);
             game = createGame();
-            startGame(game, humanPlayers);
+            startGame(game, humanPlayers, totalPlayers);
             await saveSharedGame(kv, code, game);
             const [claimedNumber, claimedToken] = await claimNextSharedSlot(kv, code, game);
             return redirectToGame(code, claimedNumber, claimedToken);
@@ -210,8 +212,9 @@ async function handleRequest(request, env, url) {
             showRules = true;
         } else if (formData.has('start_game') || formData.has('new_game')) {
             const humanPlayers = isMultiplayer ? Math.max(2, countHumanPlayers(game)) : 1;
+            const totalPlayers = isMultiplayer ? Math.max(humanPlayers, game.players.length || 4) : 4;
             game = createGame();
-            startGame(game, humanPlayers);
+            startGame(game, humanPlayers, totalPlayers);
         } else if (game.status === 1) {
             const action = formData.get('action') || '';
             if (action === 'swap_one') {

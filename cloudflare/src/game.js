@@ -138,7 +138,9 @@ export function createGame() {
     };
 }
 
-export function startGame(game, humanPlayersInput) {
+export const MAX_PLAYERS = 6;
+
+export function startGame(game, humanPlayersInput, totalPlayersInput = 4) {
     game.status = 1;
     game.message = 'Neues Spiel gestartet. Spieler 1 ist am Zug.';
     game.players = [];
@@ -149,8 +151,9 @@ export function startGame(game, humanPlayersInput) {
     game.lastPlayerAfterKnock = null;
     game.currentPlayer = 1;
 
-    const humanPlayers = Math.max(1, Math.min(4, humanPlayersInput));
-    for (let number = 1; number <= 4; number++) {
+    const totalPlayers = Math.max(2, Math.min(MAX_PLAYERS, totalPlayersInput));
+    const humanPlayers = Math.max(1, Math.min(totalPlayers, humanPlayersInput));
+    for (let number = 1; number <= totalPlayers; number++) {
         if (humanPlayers === 1 && number === 1) {
             game.players.push({ number, name: 'Du', hand: [], computer: false, passed: false });
         } else if (number <= humanPlayers) {
@@ -411,7 +414,7 @@ export function computerTurn(game) {
 
         if (currentScore >= 29 && game.knockedBy === null) {
             game.knockedBy = player.number;
-            game.lastPlayerAfterKnock = player.number === 1 ? 4 : player.number - 1;
+            game.lastPlayerAfterKnock = player.number === 1 ? game.players.length : player.number - 1;
             action = 'klopft.';
         } else if (canRenewMiddleSevenEightNine(game)) {
             if (!renewMiddleCards(game, `${player.name} wollte neue Karten aufdecken, aber es sind nicht genug Karten im Stapel.`)) {
